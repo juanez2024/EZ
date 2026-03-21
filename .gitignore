@@ -1,0 +1,6 @@
+# Secrets
+.env
+
+# OpenClaw data
+openclaw-config/
+openclaw-workspace/
