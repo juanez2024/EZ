@@ -3,3 +3,6 @@ __pycache__/
 *.pyc
 .env
 *.db
+# Capturas de tráfico: pueden contener cookies/tokens de sesión. No commitear.
+*.har
+capture_out.json

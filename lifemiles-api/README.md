@@ -85,16 +85,46 @@ python scan_once.py --fast   # sin pausas (solo para pruebas)
 
 ## Pasar a modo `live`: capturar el endpoint real
 
-1. Entrá a lifemiles.com con tu cuenta y hacé una búsqueda de premios.
-2. Abrí las **DevTools → Network** y buscá la request XHR/fetch que devuelve la
-   disponibilidad (JSON con millas por vuelo).
-3. Copiá la **URL**, los **headers** (incluida la auth) y el **body**.
-4. Volcá esos valores en `.env` (`LIFEMILES_BASE_URL`, `LIFEMILES_SEARCH_PATH`,
-   `LIFEMILES_API_KEY`) y ajustá los dos puntos marcados en
+> **Ojo con dónde corrés la captura.** LifeMiles requiere login y suele estar
+> detrás de protección anti-bots. **La captura hay que hacerla en tu propia
+> máquina**, con tu sesión iniciada. (En entornos de nube con egress
+> restringido, lifemiles.com puede estar directamente bloqueado por política de
+> red — ahí no se puede capturar; corré el tooling local.)
+
+Tenés dos formas de capturar la request de disponibilidad. Ambas están en
+`capture/` y no envían nada a ningún lado (todo el análisis es local).
+
+### Opción A — HAR de Chrome DevTools (la más simple)
+
+1. Chrome → lifemiles.com → logueate y hacé una búsqueda de premios.
+2. `F12` → pestaña **Network** → repetí la búsqueda con Network abierto.
+3. Click derecho en la lista → **"Save all as HAR with content"**.
+4. `python capture/har_to_config.py lifemiles.har`
+
+El script detecta el endpoint de premios y te imprime los valores para `.env`
+(`LIFEMILES_BASE_URL`, `LIFEMILES_SEARCH_PATH`), los headers (los sensibles
+enmascarados), el body de la request y las claves de la respuesta.
+
+### Opción B — captura interactiva con Playwright
+
+```bash
+pip install -r capture/requirements-capture.txt
+playwright install chromium
+python capture/capture_playwright.py   # abre Chromium; buscá premios; Enter
+```
+
+Guarda las requests relevantes en `capture_out.json`.
+
+### Cablear el cliente
+
+5. Volcá los valores en `.env` y ajustá los dos puntos marcados en
    `app/client.py`: **`_build_request`** (cómo se arma el body) y
-   **`_parse_response`** (cómo se leen las millas de la respuesta).
-5. Poné `LIFEMILES_MODE=live` y probá con `python scan_once.py` (un solo ciclo)
+   **`_parse_response`** (cómo se leen millas/cabina/aerolínea de la respuesta).
+6. Poné `LIFEMILES_MODE=live` y probá con `python scan_once.py` (un solo ciclo)
    antes de dejar el monitor corriendo.
+
+> **Pasame el output** de `har_to_config.py` (o el `capture_out.json`, sin
+> cookies/tokens) y te dejo los dos adaptadores cableados.
 
 ## Arquitectura
 
@@ -111,6 +141,9 @@ app/
   monitor.py      -> scheduler con rate limiting y jitter
   api.py          -> endpoints HTTP
 tests/            -> pruebas del pipeline con el cliente mock
+capture/          -> tooling LOCAL para capturar el endpoint real de LifeMiles
+  har_to_config.py       -> HAR de Chrome -> valores de .env + mapeo (solo stdlib)
+  capture_playwright.py  -> captura interactiva con Chromium
 ```
 
 ## Tests
