@@ -1,0 +1,67 @@
+# Configuración del monitor de ofertas LifeMiles.
+# Editá los destinos y los umbrales según tu estrategia.
+#
+# LifeMiles permite redimir en CUALQUIER aerolínea de Star Alliance
+# (Lufthansa, Turkish, Swiss, United, ANA, Air Canada, Austrian, etc.),
+# no solo Avianca. Por eso podés monitorear rutas donde Avianca no vuela
+# directo: la búsqueda devuelve la disponibilidad de los socios y cada
+# oferta trae la aerolínea operadora (campo `carrier`).
+
+# Cada búsqueda combina origin + destination + una ventana de fechas.
+# La herramienta rota entre todas las rutas en cada ciclo del scheduler.
+routes:
+  # --- Núcleo Avianca ---
+  - origin: BOG        # Bogotá
+    destination: MAD   # Madrid
+  - origin: BOG
+    destination: MIA   # Miami
+  - origin: BOG
+    destination: SCL   # Santiago de Chile
+  - origin: MDE        # Medellín
+    destination: JFK   # Nueva York
+  - origin: BOG
+    destination: GRU   # São Paulo
+  # --- Socios Star Alliance (Avianca no vuela directo / premium economy) ---
+  - origin: BOG
+    destination: FRA   # Frankfurt - Lufthansa (premium economy)
+  - origin: BOG
+    destination: IST   # Estambul - Turkish (premium economy)
+  - origin: BOG
+    destination: ZRH   # Zúrich - Swiss (premium economy)
+  - origin: BOG
+    destination: NRT   # Tokio - ANA/United (Avianca no vuela)
+  - origin: EZE        # Buenos Aires
+    destination: FRA   # Frankfurt - Lufthansa (premium economy)
+
+search:
+  # Cabinas a monitorear. `premium` = premium economy (socios europeos/asiáticos).
+  cabins: [economy, premium, business]
+  passengers: 1
+  # Ventana de fechas relativa a hoy (en días). Busca salidas entre
+  # start_offset y end_offset días desde hoy.
+  date_window_days:
+    start_offset: 14
+    end_offset: 120
+  # Cuántas fechas concretas muestrear dentro de la ventana por ciclo.
+  sample_dates_per_cycle: 6
+
+# Un resultado se marca como "oferta" (deal) si cumple cualquiera de estos.
+# Umbrales de millas por cabina; por debajo => alerta.
+deals:
+  max_miles:
+    economy: 30000
+    premium: 55000     # premium economy a Europa/Asia
+    business: 90000
+  # También alerta si las millas caen X% respecto al mínimo histórico
+  # visto para esa misma ruta+cabina.
+  drop_pct_vs_historical: 15
+  # Si querés alertas SOLO de ciertas aerolíneas, listá sus códigos IATA
+  # (ej: [LH, LX, TK, OS]). Vacío = todas las Star Alliance.
+  only_carriers: []
+
+scheduler:
+  # Segundos entre ciclos de búsqueda. 1 vez al día.
+  interval_seconds: 86400      # 24 horas
+  jitter_seconds: 3600         # +/- hasta 1h aleatorio (no ser predecible)
+  # Pausa mínima entre requests individuales dentro de un ciclo.
+  per_request_delay_seconds: 4
