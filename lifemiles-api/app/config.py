@@ -65,8 +65,10 @@ class SearchConfig(BaseModel):
 
 
 class DealsConfig(BaseModel):
-    max_miles: dict[str, int] = {"economy": 30000, "business": 90000}
+    max_miles: dict[str, int] = {"economy": 30000, "premium": 55000, "business": 90000}
     drop_pct_vs_historical: float = 15.0
+    # Códigos IATA de aerolíneas a alertar. Vacío = todas las Star Alliance.
+    only_carriers: list[str] = []
 
 
 class SchedulerConfig(BaseModel):

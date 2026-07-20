@@ -17,6 +17,10 @@ class DealDetector:
         Se llama ANTES de registrar la oferta, para comparar contra el
         mínimo histórico previo (sin contarse a sí misma).
         """
+        # Filtro opcional por aerolínea (ej: solo Lufthansa/Swiss/Turkish).
+        if self._cfg.only_carriers and offer.carrier not in self._cfg.only_carriers:
+            return None
+
         reasons: list[str] = []
 
         threshold = self._cfg.max_miles.get(offer.cabin)

@@ -59,6 +59,15 @@ class MockLifeMilesClient(LifeMilesClient):
     Útil para desarrollo/tests: mismo input => mismo output, sin red.
     """
 
+    # Aerolínea Star Alliance que suele operar cada destino (para simular
+    # disponibilidad de socios, no solo Avianca).
+    _CARRIER_BY_DEST = {
+        "FRA": "LH", "ZRH": "LX", "IST": "TK", "NRT": "NH",
+        "JFK": "UA", "GRU": "AV", "MAD": "AV", "MIA": "AV",
+        "SCL": "AV",
+    }
+    _BASE_MILES = {"economy": 25000, "premium": 45000, "business": 80000}
+
     def search(self, origin, destination, depart_date, cabin, passengers):
         seed = int(
             hashlib.sha256(
@@ -66,12 +75,13 @@ class MockLifeMilesClient(LifeMilesClient):
             ).hexdigest(),
             16,
         )
-        base = 25000 if cabin == "economy" else 80000
+        base = self._BASE_MILES.get(cabin, 40000)
         # Variación pseudo-aleatoria pero estable: +/- ~40%.
         spread = (seed % 800) / 1000.0  # 0.0 .. 0.8
         miles = int(base * (0.7 + spread))
         seats = 1 + (seed % 6)
-        taxes = 45.0 if cabin == "economy" else 120.0
+        taxes = {"economy": 45.0, "premium": 90.0}.get(cabin, 120.0)
+        carrier = self._CARRIER_BY_DEST.get(destination, "AV")
         return [
             Offer(
                 origin=origin,
@@ -81,7 +91,7 @@ class MockLifeMilesClient(LifeMilesClient):
                 miles=miles,
                 taxes=taxes,
                 currency="USD",
-                carrier="AV",
+                carrier=carrier,
                 seats_left=seats,
             )
         ]
@@ -117,11 +127,19 @@ class LiveLifeMilesClient(LifeMilesClient):
 
         Reemplazá estas claves por las del payload real que capturaste.
         """
+        # Mapeo de cabina interno -> valor esperado por LifeMiles.
+        # Ajustá los valores de la derecha a los reales del endpoint.
+        cabin_map = {
+            "economy": "ECONOMY",
+            "premium": "PREMIUM_ECONOMY",
+            "business": "BUSINESS",
+            "first": "FIRST",
+        }
         payload = {
             "origin": origin,
             "destination": destination,
             "departureDate": depart_date.isoformat(),
-            "cabinClass": cabin.upper(),
+            "cabinClass": cabin_map.get(cabin, cabin.upper()),
             "adults": passengers,
             "awardType": "REDEMPTION",
         }

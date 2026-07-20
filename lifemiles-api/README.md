@@ -1,11 +1,19 @@
 # LifeMiles Deals API (no oficial)
 
-Monitor que busca continuamente disponibilidad de **premios (redención de millas)**
+Monitor que busca 1 vez al día disponibilidad de **premios (redención de millas)**
 en LifeMiles para un conjunto de destinos y te **avisa cuando aparece una ganga**.
 Expone una pequeña API HTTP para consultar las ofertas y los deals detectados.
 
-> **Qué hace:** busca disponibilidad, guarda el histórico y alerta cuando las
-> millas bajan de un umbral o caen respecto al mínimo histórico de esa ruta.
+**Toda Star Alliance, no solo Avianca.** LifeMiles permite redimir en cualquier
+socio de Star Alliance (Lufthansa `LH`, Swiss `LX`, Turkish `TK`, United `UA`,
+ANA `NH`, Air Canada `AC`, Austrian `OS`…). La búsqueda devuelve la
+disponibilidad de esos socios, así que podés monitorear **rutas donde Avianca no
+vuela directo** (ej. Tokio) o **premium economy a Europa** (Lufthansa/Swiss/
+Turkish). Cada oferta y cada alerta muestran la aerolínea operadora (`carrier`).
+
+> **Qué hace:** busca disponibilidad (economy / premium economy / business),
+> guarda el histórico y alerta cuando las millas bajan de un umbral o caen
+> respecto al mínimo histórico de esa ruta+cabina.
 >
 > **Qué NO hace (a propósito):** **no redime ni compra automáticamente.**
 > Redimir es una transacción financiera irreversible (emisión de tickets,
@@ -20,10 +28,9 @@ Expone una pequeña API HTTP para consultar las ofertas y los deals detectados.
   está documentado, cambia con el tiempo, y **capturarlo/usarlo puede violar los
   Términos y Condiciones de LifeMiles.** Usalo bajo tu responsabilidad y con tu
   propia cuenta.
-- **Polling respetuoso.** El scheduler está configurado conservador a propósito
-  (15 min por ciclo, 4 s entre requests, con jitter). Bajar esto y "buscar todo
-  el tiempo" de forma agresiva es la manera más rápida de que te **bloqueen la
-  cuenta o la IP**. No lo hagas.
+- **Polling respetuoso.** El scheduler corre **1 vez al día** (± jitter de hasta
+  1 h), 4 s entre requests. Bajarlo y "buscar todo el tiempo" de forma agresiva
+  es la manera más rápida de que te **bloqueen la cuenta o la IP**. No lo hagas.
 - Empezá siempre en **modo `mock`** (por defecto) para validar el pipeline sin
   tocar la red ni arriesgar la cuenta.
 
@@ -42,8 +49,14 @@ cp .env.example .env      # completá tus valores
 - **`config.yaml`** — destinos, cabinas, ventana de fechas, umbrales de deal y
   el ritmo del scheduler.
 
-Los 5 destinos que vienen de ejemplo (editables en `config.yaml`):
-BOG→MAD, BOG→MIA, BOG→SCL, MDE→JFK, BOG→GRU.
+Rutas de ejemplo (editables en `config.yaml`):
+- **Núcleo Avianca:** BOG→MAD, BOG→MIA, BOG→SCL, MDE→JFK, BOG→GRU.
+- **Socios Star Alliance:** BOG→FRA (Lufthansa, premium economy), BOG→IST
+  (Turkish, premium economy), BOG→ZRH (Swiss, premium economy), BOG→NRT
+  (ANA/United, Avianca no vuela), EZE→FRA (Lufthansa).
+
+Para alertar **solo** de ciertas aerolíneas, poné sus códigos IATA en
+`deals.only_carriers` (ej. `[LH, LX, TK, OS]`). Vacío = todas las Star Alliance.
 
 ## Uso
 

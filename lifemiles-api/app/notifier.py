@@ -16,8 +16,10 @@ class Notifier:
 
     def _format(self, deal: Deal) -> str:
         o = deal.offer
+        carrier = f" via {o.carrier}" if o.carrier else ""
         return (
-            f"🔥 DEAL {o.origin}->{o.destination} {o.depart_date} [{o.cabin}]\n"
+            f"🔥 DEAL {o.origin}->{o.destination} {o.depart_date} "
+            f"[{o.cabin}]{carrier}\n"
             f"   {o.miles} millas + {o.taxes:.0f} {o.currency}"
             f"{f' | {o.seats_left} asientos' if o.seats_left is not None else ''}\n"
             f"   Motivo: {', '.join(deal.reasons)}"
