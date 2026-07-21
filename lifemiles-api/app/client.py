@@ -98,9 +98,30 @@ class MockLifeMilesClient(LifeMilesClient):
 
 
 class LiveLifeMilesClient(LifeMilesClient):
-    """Cliente real contra el endpoint de disponibilidad configurado.
+    """Cliente real contra el endpoint de disponibilidad de LifeMiles.
 
-    Ajustá ``_build_request`` y ``_parse_response`` a la request real."""
+    Reproduce la request que hace el sitio web al buscar premios (redención
+    de millas). El contrato fue capturado desde el buscador real
+    (``/svc/air-redemption-find-flight-private``). ``_build_request`` y
+    ``_parse_response`` están cableados a esa forma; ver
+    ``capture/samples/`` para un ejemplo completo de request+response.
+
+    AUTENTICACIÓN (importante)
+    --------------------------
+    El endpoint es privado: exige ``Authorization: Bearer <JWT>``. Ese token
+    lo emite el SSO de LifeMiles (Keycloak) al iniciar sesión y **vive solo
+    unos minutos**. Este cliente lo toma de ``settings.lifemiles_api_key``,
+    así que para un monitoreo autónomo real hace falta un paso previo de
+    login/refresh de token (aún no implementado). Con un token pegado a mano
+    en ``.env`` sirve para una corrida puntual mientras el token siga vivo.
+    """
+
+    # Mapeo de cabina interno -> ``cabinCode`` de LifeMiles.
+    # Confirmados desde la captura real: economy=1, business=2.
+    # premium/first son la convención esperada pero NO verificados con una
+    # captura (Avianca no vende premium economy en la ruta capturada); si un
+    # socio Star Alliance no aparece, revisá el código con una nueva captura.
+    _CABIN_CODE = {"economy": "1", "premium": "3", "business": "2", "first": "4"}
 
     def __init__(self, settings: Settings) -> None:
         self._s = settings
@@ -110,6 +131,7 @@ class LiveLifeMilesClient(LifeMilesClient):
             headers={
                 "Accept": "application/json",
                 "Content-Type": "application/json",
+                "realm": settings.lifemiles_realm,
                 # Un User-Agent de navegador real reduce bloqueos triviales.
                 "User-Agent": (
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -123,30 +145,85 @@ class LiveLifeMilesClient(LifeMilesClient):
     def _build_request(
         self, origin, destination, depart_date, cabin, passengers
     ) -> dict:
-        """Construye el body JSON de la búsqueda.
+        """Construye el body JSON de la búsqueda de premios.
 
-        Reemplazá estas claves por las del payload real que capturaste.
+        La forma sigue el payload real de
+        ``/svc/air-redemption-find-flight-private``. Los campos derivados de
+        la sesión web (``idCoti``, ``sch`` y los códigos de descuento de la
+        cuenta) son opcionales: se incluyen solo si están configurados. El
+        servidor puede exigir algunos de ellos; eso solo se confirma con un
+        round-trip real (ver nota de AUTENTICACIÓN en la clase).
         """
-        # Mapeo de cabina interno -> valor esperado por LifeMiles.
-        # Ajustá los valores de la derecha a los reales del endpoint.
-        cabin_map = {
-            "economy": "ECONOMY",
-            "premium": "PREMIUM_ECONOMY",
-            "business": "BUSINESS",
-            "first": "FIRST",
-        }
+        code = self._CABIN_CODE.get(cabin, "1")
         payload = {
-            "origin": origin,
-            "destination": destination,
-            "departureDate": depart_date.isoformat(),
-            "cabinClass": cabin_map.get(cabin, cabin.upper()),
-            "adults": passengers,
-            "awardType": "REDEMPTION",
+            "internationalization": {
+                "language": self._s.lifemiles_language,
+                "country": self._s.lifemiles_country,
+                "currency": self._s.lifemiles_currency.lower(),
+            },
+            "currencies": [{"currency": "USD", "decimal": 2, "rateUsd": 1}],
+            "passengers": passengers,
+            "od": {
+                "orig": origin,
+                "dest": destination,
+                "departingCity": "",
+                "arrivalCity": "",
+                "depDate": depart_date.isoformat(),
+                "depTime": "",
+            },
+            "filter": False,
+            "codPromo": None,
+            "officeId": "",
+            "ftNum": "",
+            "context": "D",
+            "channel": "COM",
+            "cabin": code,
+            "itinerary": "OW",
+            "odNum": 1,
+            "usdTaxValue": "0",
+            "getQuickSummary": False,
+            "ods": "",
+            "searchType": "SMR",
+            "searchTypePrioritized": "AVH",
+            "posCountry": self._s.lifemiles_country.upper(),
+            "odAp": [{"org": origin, "dest": destination, "cabin": int(code)}],
+            "suscriptionPaymentStatus": "",
+            "paxNumByType": {"INF": 0, "CHD": 0, "YTH": 0, "ADT": passengers},
         }
+        # Campos de sesión, opcionales (ver docstring).
+        if self._s.lifemiles_id_coti:
+            payload["idCoti"] = self._s.lifemiles_id_coti
         headers = {}
         if self._s.lifemiles_api_key:
             headers["Authorization"] = f"Bearer {self._s.lifemiles_api_key}"
         return {"json": payload, "headers": headers}
+
+    @staticmethod
+    def _carrier_of(trip: dict) -> str:
+        """Código IATA de la aerolínea operadora del primer segmento.
+
+        Se toma de ``flightsDetail`` (``operatedCompany``/``marketingCompany``),
+        que trae el código limpio (ej. "AV", "LH"); es más confiable que el
+        texto libre de ``operators`` ("Operado por ...").
+        """
+        for seg in trip.get("flightsDetail") or []:
+            code = seg.get("operatedCompany") or seg.get("marketingCompany")
+            if code:
+                return code
+        return ""
+
+    @staticmethod
+    def _seats_of(trip: dict, cabin_code: str) -> int | None:
+        """Menor cantidad de sillas restantes para la cabina pedida."""
+        seats: list[int] = []
+        for product in trip.get("products") or []:
+            if str(product.get("cabinCode")) != cabin_code:
+                continue
+            for flight in product.get("flights") or []:
+                n = flight.get("remainingSeats")
+                if isinstance(n, int) and n > 0:
+                    seats.append(n)
+        return min(seats) if seats else None
 
     # -- PUNTO DE AJUSTE 2: cómo se lee la respuesta --
     def _parse_response(
@@ -154,27 +231,57 @@ class LiveLifeMilesClient(LifeMilesClient):
     ) -> list[Offer]:
         """Traduce el JSON de respuesta a objetos ``Offer``.
 
-        Ajustá las rutas de acceso (``data["itineraries"]`` etc.) a la
-        forma real de la respuesta.
+        Una sola búsqueda devuelve todas las cabinas; acá filtramos a la
+        cabina pedida leyendo ``lowestPriceByCabin`` de cada vuelo. Se usan
+        las **millas regulares** (no el precio con descuentos de banco de la
+        cuenta) para que el histórico sea comparable en el tiempo.
         """
+        if data.get("status") not in (None, "success"):
+            log.warning(
+                "Respuesta con status inesperado (%s) para %s-%s %s",
+                data.get("status"), origin, destination, depart_date,
+            )
+        code = self._CABIN_CODE.get(cabin, "1")
         offers: list[Offer] = []
-        for item in data.get("itineraries", []):
+        for trip in data.get("tripsList", []):
+            price = next(
+                (
+                    p for p in trip.get("lowestPriceByCabin") or []
+                    if str(p.get("cabinCode")) == code
+                ),
+                None,
+            )
+            if not price:
+                continue
             try:
-                offers.append(
-                    Offer(
-                        origin=origin,
-                        destination=destination,
-                        depart_date=depart_date,
-                        cabin=cabin,
-                        miles=int(item["miles"]),
-                        taxes=float(item.get("taxes", 0.0)),
-                        currency=item.get("currency", "USD"),
-                        carrier=item.get("carrier", ""),
-                        seats_left=item.get("seatsAvailable"),
-                    )
+                miles = int(price["miles"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if miles <= 0:  # cabina agotada para ese vuelo
+                continue
+            try:
+                trip_date = date.fromisoformat(
+                    trip.get("departingDate") or depart_date.isoformat()
                 )
-            except (KeyError, TypeError, ValueError) as exc:
-                log.warning("Ítem de respuesta ignorado (%s): %s", exc, item)
+            except ValueError:
+                trip_date = depart_date
+            try:
+                taxes = float(price.get("usdTaxValue") or 0.0)
+            except (TypeError, ValueError):
+                taxes = 0.0
+            offers.append(
+                Offer(
+                    origin=trip.get("departingCityCode") or origin,
+                    destination=trip.get("arrivalCityCode") or destination,
+                    depart_date=trip_date,
+                    cabin=cabin,
+                    miles=miles,
+                    taxes=taxes,
+                    currency="USD",
+                    carrier=self._carrier_of(trip),
+                    seats_left=self._seats_of(trip, code),
+                )
+            )
         return offers
 
     @retry(

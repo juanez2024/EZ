@@ -21,8 +21,16 @@ class Settings(BaseSettings):
     lifemiles_username: str = ""
     lifemiles_password: str = ""
     lifemiles_base_url: str = "https://api.lifemiles.com"
-    lifemiles_search_path: str = "/v1/availability/search"
+    lifemiles_search_path: str = "/svc/air-redemption-find-flight-private"
+    # Bearer JWT del SSO de LifeMiles (Keycloak). Corta vida (~minutos);
+    # ver nota de AUTENTICACIÓN en LiveLifeMilesClient.
     lifemiles_api_key: str = ""
+    lifemiles_realm: str = "lifemiles"
+    lifemiles_language: str = "es"
+    lifemiles_country: str = "co"
+    lifemiles_currency: str = "COP"
+    # Opcional: id de cotización de una sesión web, si el server lo exige.
+    lifemiles_id_coti: str = ""
     lifemiles_mode: str = Field("mock", pattern="^(mock|live)$")
 
     alert_webhook_url: str = ""

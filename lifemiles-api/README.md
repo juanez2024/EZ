@@ -83,7 +83,36 @@ python scan_once.py          # respeta el rate limit
 python scan_once.py --fast   # sin pausas (solo para pruebas)
 ```
 
-## Pasar a modo `live`: capturar el endpoint real
+## Modo `live`: el endpoint real (ya cableado)
+
+El endpoint de premios ya está identificado y **`_build_request` /
+`_parse_response` están cableados a su contrato real**:
+
+- **URL:** `POST https://api.lifemiles.com/svc/air-redemption-find-flight-private`
+- **Headers:** `Accept`, `Content-Type`, `realm: lifemiles`,
+  `Authorization: Bearer <JWT>`
+- **Body/respuesta:** ver `capture/samples/lifemiles_capture.json` (ejemplo real
+  completo, con el token enmascarado) y el fixture
+  `tests/fixtures/air_redemption_bog_mad.json` que ejercita el parser en los
+  tests (`tests/test_live_parser.py`).
+
+### Lo único que falta para `live` autónomo: el token
+
+El endpoint es privado y exige un **Bearer JWT del SSO de LifeMiles (Keycloak)**
+que **vive solo unos minutos**. Hoy el cliente lo toma de `LIFEMILES_API_KEY`:
+
+- **Corrida puntual (ya funciona):** copiá un token fresco de las DevTools
+  (Network → una request a `api.lifemiles.com` → header `Authorization`, sin el
+  prefijo `Bearer `), pegalo en `.env`, poné `LIFEMILES_MODE=live` y corré
+  `python scan_once.py` **mientras el token siga vivo**.
+- **Monitoreo desatendido (pendiente):** falta un paso de login/refresh contra
+  `sso.lifemiles.com/auth/realms/lifemiles` que renueve el token en cada ciclo.
+  Además, el body real trae campos derivados de la sesión web (`idCoti`, `sch`);
+  el cliente los manda como opcionales — si el server los exige, se ve con un
+  round-trip real (por ahora el parser está 100% verificado, el build_request
+  puede necesitar ajuste fino de esos campos de sesión).
+
+### Re-capturar el contrato (si LifeMiles lo cambia)
 
 > **Ojo con dónde corrés la captura.** LifeMiles requiere login y suele estar
 > detrás de protección anti-bots. **La captura hay que hacerla en tu propia
@@ -115,16 +144,12 @@ python capture/capture_playwright.py   # abre Chromium; buscá premios; Enter
 
 Guarda las requests relevantes en `capture_out.json`.
 
-### Cablear el cliente
+### Si cambió la forma de la request/respuesta
 
-5. Volcá los valores en `.env` y ajustá los dos puntos marcados en
-   `app/client.py`: **`_build_request`** (cómo se arma el body) y
-   **`_parse_response`** (cómo se leen millas/cabina/aerolínea de la respuesta).
-6. Poné `LIFEMILES_MODE=live` y probá con `python scan_once.py` (un solo ciclo)
-   antes de dejar el monitor corriendo.
-
-> **Pasame el output** de `har_to_config.py` (o el `capture_out.json`, sin
-> cookies/tokens) y te dejo los dos adaptadores cableados.
+Ajustá los dos puntos marcados en `app/client.py`: **`_build_request`** (cómo se
+arma el body) y **`_parse_response`** (cómo se leen millas/cabina/aerolínea).
+Actualizá también el fixture `tests/fixtures/air_redemption_bog_mad.json` con la
+respuesta nueva y corré `pytest` para verificar el parser.
 
 ## Arquitectura
 
