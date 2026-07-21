@@ -83,7 +83,61 @@ python scan_once.py          # respeta el rate limit
 python scan_once.py --fast   # sin pausas (solo para pruebas)
 ```
 
-## Pasar a modo `live`: capturar el endpoint real
+## Modo `live`: el endpoint real (ya cableado)
+
+El endpoint de premios ya está identificado y **`_build_request` /
+`_parse_response` están cableados a su contrato real**:
+
+- **URL:** `POST https://api.lifemiles.com/svc/air-redemption-find-flight-private`
+- **Headers:** `Accept`, `Content-Type`, `realm: lifemiles`,
+  `Authorization: Bearer <JWT>`
+- **Body/respuesta:** ver `capture/samples/lifemiles_capture.json` (ejemplo real
+  completo, con el token enmascarado) y el fixture
+  `tests/fixtures/air_redemption_bog_mad.json` que ejercita el parser en los
+  tests (`tests/test_live_parser.py`).
+
+### Autenticación: token que se renueva solo
+
+El endpoint es privado y exige un **Bearer JWT del SSO de LifeMiles (Keycloak)**
+que **vive solo unos minutos**. Hay dos caminos:
+
+**A) Monitoreo autónomo — `refresh_token` (recomendado).** El módulo
+`app/auth.py` renueva el access token solo contra el SSO en cada ciclo. Solo
+tenés que darle un **refresh token una vez** (login manual en tu navegador,
+nadie más toca tu contraseña):
+
+1. `lifemiles.com` → logueate.
+2. `F12` → **Network** → filtrá por `token`.
+3. Abrí la request a `…/openid-connect/token`; en la respuesta JSON copiá el
+   valor de `refresh_token`.
+4. Pegalo en `.env` como `LIFEMILES_REFRESH_TOKEN=…`, dejá `LIFEMILES_API_KEY`
+   vacío, poné `LIFEMILES_MODE=live`.
+
+A partir de ahí el provider pide access tokens nuevos con
+`grant_type=refresh_token` (client `lm-prd`), y como Keycloak **rota** el
+refresh token en cada uso, lo persiste en `.lifemiles_token.json`
+(gitignoreado) para sobrevivir reinicios. Fallback: si en vez del refresh token
+ponés `LIFEMILES_USERNAME`/`LIFEMILES_PASSWORD`, intenta `grant_type=password`
+(puede no andar si tu cuenta está federada).
+
+> **Que dure meses, no minutos.** Un refresh token normal muere cuando expira la
+> sesión SSO (~horas). Para un daemon conviene un refresh token
+> **`offline_access`**, que no depende de la sesión. Si al loguearte agregás
+> `offline_access` al scope, el `refresh_token` resultante es offline. Tu cuenta
+> ya tiene el rol `offline_access` habilitado (visto en el JWT capturado).
+
+**B) Corrida puntual — token manual.** Copiá un access token fresco de las
+DevTools (header `Authorization`, sin `Bearer `), pegalo en `LIFEMILES_API_KEY`
+y corré `python scan_once.py` **mientras el token siga vivo** (~minutos). Útil
+para una prueba rápida sin configurar el refresh.
+
+> **Nota sobre campos de sesión.** El body real trae `idCoti` y unos hashes
+> `sch` derivados de la sesión web. El cliente los manda como opcionales
+> (`LIFEMILES_ID_COTI`). El parser está 100% verificado contra la respuesta
+> real; si el server llegara a exigir esos campos, se confirma con el primer
+> round-trip en vivo y es un ajuste chico en `_build_request`.
+
+### Re-capturar el contrato (si LifeMiles lo cambia)
 
 > **Ojo con dónde corrés la captura.** LifeMiles requiere login y suele estar
 > detrás de protección anti-bots. **La captura hay que hacerla en tu propia
@@ -115,16 +169,12 @@ python capture/capture_playwright.py   # abre Chromium; buscá premios; Enter
 
 Guarda las requests relevantes en `capture_out.json`.
 
-### Cablear el cliente
+### Si cambió la forma de la request/respuesta
 
-5. Volcá los valores en `.env` y ajustá los dos puntos marcados en
-   `app/client.py`: **`_build_request`** (cómo se arma el body) y
-   **`_parse_response`** (cómo se leen millas/cabina/aerolínea de la respuesta).
-6. Poné `LIFEMILES_MODE=live` y probá con `python scan_once.py` (un solo ciclo)
-   antes de dejar el monitor corriendo.
-
-> **Pasame el output** de `har_to_config.py` (o el `capture_out.json`, sin
-> cookies/tokens) y te dejo los dos adaptadores cableados.
+Ajustá los dos puntos marcados en `app/client.py`: **`_build_request`** (cómo se
+arma el body) y **`_parse_response`** (cómo se leen millas/cabina/aerolínea).
+Actualizá también el fixture `tests/fixtures/air_redemption_bog_mad.json` con la
+respuesta nueva y corré `pytest` para verificar el parser.
 
 ## Arquitectura
 
