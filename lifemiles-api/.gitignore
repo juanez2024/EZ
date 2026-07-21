@@ -6,3 +6,5 @@ __pycache__/
 # Capturas de tráfico: pueden contener cookies/tokens de sesión. No commitear.
 *.har
 capture_out.json
+# Cache del refresh token rotado (credencial). Nunca commitear.
+.lifemiles_token.json

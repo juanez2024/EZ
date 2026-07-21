@@ -96,21 +96,46 @@ El endpoint de premios ya está identificado y **`_build_request` /
   `tests/fixtures/air_redemption_bog_mad.json` que ejercita el parser en los
   tests (`tests/test_live_parser.py`).
 
-### Lo único que falta para `live` autónomo: el token
+### Autenticación: token que se renueva solo
 
 El endpoint es privado y exige un **Bearer JWT del SSO de LifeMiles (Keycloak)**
-que **vive solo unos minutos**. Hoy el cliente lo toma de `LIFEMILES_API_KEY`:
+que **vive solo unos minutos**. Hay dos caminos:
 
-- **Corrida puntual (ya funciona):** copiá un token fresco de las DevTools
-  (Network → una request a `api.lifemiles.com` → header `Authorization`, sin el
-  prefijo `Bearer `), pegalo en `.env`, poné `LIFEMILES_MODE=live` y corré
-  `python scan_once.py` **mientras el token siga vivo**.
-- **Monitoreo desatendido (pendiente):** falta un paso de login/refresh contra
-  `sso.lifemiles.com/auth/realms/lifemiles` que renueve el token en cada ciclo.
-  Además, el body real trae campos derivados de la sesión web (`idCoti`, `sch`);
-  el cliente los manda como opcionales — si el server los exige, se ve con un
-  round-trip real (por ahora el parser está 100% verificado, el build_request
-  puede necesitar ajuste fino de esos campos de sesión).
+**A) Monitoreo autónomo — `refresh_token` (recomendado).** El módulo
+`app/auth.py` renueva el access token solo contra el SSO en cada ciclo. Solo
+tenés que darle un **refresh token una vez** (login manual en tu navegador,
+nadie más toca tu contraseña):
+
+1. `lifemiles.com` → logueate.
+2. `F12` → **Network** → filtrá por `token`.
+3. Abrí la request a `…/openid-connect/token`; en la respuesta JSON copiá el
+   valor de `refresh_token`.
+4. Pegalo en `.env` como `LIFEMILES_REFRESH_TOKEN=…`, dejá `LIFEMILES_API_KEY`
+   vacío, poné `LIFEMILES_MODE=live`.
+
+A partir de ahí el provider pide access tokens nuevos con
+`grant_type=refresh_token` (client `lm-prd`), y como Keycloak **rota** el
+refresh token en cada uso, lo persiste en `.lifemiles_token.json`
+(gitignoreado) para sobrevivir reinicios. Fallback: si en vez del refresh token
+ponés `LIFEMILES_USERNAME`/`LIFEMILES_PASSWORD`, intenta `grant_type=password`
+(puede no andar si tu cuenta está federada).
+
+> **Que dure meses, no minutos.** Un refresh token normal muere cuando expira la
+> sesión SSO (~horas). Para un daemon conviene un refresh token
+> **`offline_access`**, que no depende de la sesión. Si al loguearte agregás
+> `offline_access` al scope, el `refresh_token` resultante es offline. Tu cuenta
+> ya tiene el rol `offline_access` habilitado (visto en el JWT capturado).
+
+**B) Corrida puntual — token manual.** Copiá un access token fresco de las
+DevTools (header `Authorization`, sin `Bearer `), pegalo en `LIFEMILES_API_KEY`
+y corré `python scan_once.py` **mientras el token siga vivo** (~minutos). Útil
+para una prueba rápida sin configurar el refresh.
+
+> **Nota sobre campos de sesión.** El body real trae `idCoti` y unos hashes
+> `sch` derivados de la sesión web. El cliente los manda como opcionales
+> (`LIFEMILES_ID_COTI`). El parser está 100% verificado contra la respuesta
+> real; si el server llegara a exigir esos campos, se confirma con el primer
+> round-trip en vivo y es un ajuste chico en `_build_request`.
 
 ### Re-capturar el contrato (si LifeMiles lo cambia)
 

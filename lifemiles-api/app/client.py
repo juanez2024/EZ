@@ -29,6 +29,7 @@ from tenacity import (
     wait_exponential,
 )
 
+from .auth import TokenError, build_token_provider
 from .config import Settings
 from .models import Offer
 
@@ -123,8 +124,11 @@ class LiveLifeMilesClient(LifeMilesClient):
     # socio Star Alliance no aparece, revisá el código con una nueva captura.
     _CABIN_CODE = {"economy": "1", "premium": "3", "business": "2", "first": "4"}
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, token_provider=None) -> None:
         self._s = settings
+        # Renovación automática de token (Keycloak). Si no hay refresh token ni
+        # credenciales, queda None y se usa el api_key manual de settings.
+        self._token_provider = token_provider or build_token_provider(settings)
         self._client = httpx.Client(
             base_url=settings.lifemiles_base_url,
             timeout=30.0,
@@ -140,6 +144,12 @@ class LiveLifeMilesClient(LifeMilesClient):
                 ),
             },
         )
+
+    def _bearer(self) -> str:
+        """Token a usar: el auto-renovado si hay provider, si no el manual."""
+        if self._token_provider is not None:
+            return self._token_provider.get_access_token()
+        return self._s.lifemiles_api_key
 
     # -- PUNTO DE AJUSTE 1: cómo se arma la request --
     def _build_request(
@@ -194,8 +204,9 @@ class LiveLifeMilesClient(LifeMilesClient):
         if self._s.lifemiles_id_coti:
             payload["idCoti"] = self._s.lifemiles_id_coti
         headers = {}
-        if self._s.lifemiles_api_key:
-            headers["Authorization"] = f"Bearer {self._s.lifemiles_api_key}"
+        token = self._bearer()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
         return {"json": payload, "headers": headers}
 
     @staticmethod
@@ -296,7 +307,14 @@ class LiveLifeMilesClient(LifeMilesClient):
         return resp
 
     def search(self, origin, destination, depart_date, cabin, passengers):
-        req = self._build_request(origin, destination, depart_date, cabin, passengers)
+        try:
+            req = self._build_request(
+                origin, destination, depart_date, cabin, passengers
+            )
+        except TokenError as exc:
+            # Sin token no se puede buscar: se registra y se sigue con el ciclo.
+            log.error("No hay token para %s-%s %s: %s", origin, destination, depart_date, exc)
+            return []
         try:
             resp = self._post(req)
         except httpx.HTTPStatusError as exc:
@@ -312,6 +330,8 @@ class LiveLifeMilesClient(LifeMilesClient):
 
     def close(self) -> None:
         self._client.close()
+        if self._token_provider is not None:
+            self._token_provider.close()
 
 
 def build_client(settings: Settings) -> LifeMilesClient:

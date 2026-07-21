@@ -22,10 +22,24 @@ class Settings(BaseSettings):
     lifemiles_password: str = ""
     lifemiles_base_url: str = "https://api.lifemiles.com"
     lifemiles_search_path: str = "/svc/air-redemption-find-flight-private"
-    # Bearer JWT del SSO de LifeMiles (Keycloak). Corta vida (~minutos);
-    # ver nota de AUTENTICACIÓN en LiveLifeMilesClient.
+    # Bearer JWT del SSO de LifeMiles (Keycloak). Corta vida (~minutos).
+    # Override manual para una corrida puntual; para monitoreo autónomo usá
+    # LIFEMILES_REFRESH_TOKEN y dejá esto vacío (ver app/auth.py).
     lifemiles_api_key: str = ""
     lifemiles_realm: str = "lifemiles"
+
+    # --- Auth automática (Keycloak). Ver app/auth.py ---
+    lifemiles_token_url: str = (
+        "https://sso.lifemiles.com/auth/realms/lifemiles/"
+        "protocol/openid-connect/token"
+    )
+    lifemiles_client_id: str = "lm-prd"
+    lifemiles_scope: str = "openid"
+    # Refresh token del SSO (obtenido con un login manual una vez). Camino
+    # recomendado para renovación autónoma.
+    lifemiles_refresh_token: str = ""
+    # Archivo donde se persiste el refresh token rotado (gitignoreado).
+    lifemiles_token_cache: str = ".lifemiles_token.json"
     lifemiles_language: str = "es"
     lifemiles_country: str = "co"
     lifemiles_currency: str = "COP"
