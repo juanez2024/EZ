@@ -1,8 +1,10 @@
-fastapi==0.115.6
-uvicorn[standard]==0.34.0
-httpx==0.28.1
-pydantic==2.10.4
-pydantic-settings==2.7.1
-apscheduler==3.11.0
-pyyaml==6.0.2
-tenacity==9.0.0
+# Versiones mínimas (no fijas) para que pip use wheels precompilados en
+# cualquier Python moderno (incl. 3.14) sin tener que compilar desde Rust.
+fastapi>=0.115
+uvicorn[standard]>=0.34
+httpx>=0.28
+pydantic>=2.11
+pydantic-settings>=2.7
+apscheduler>=3.11
+pyyaml>=6.0
+tenacity>=9.0
